@@ -1,5 +1,10 @@
-/*@(#)$Id: kl10m.s,v 1.3 2000/10/13 12:32:30 mark Exp mark $
+/*@(#)$Id: kl10m.s,v 1.4 2000/10/27 04:20:59 mark Exp mark $
 * @(#)$Log: kl10m.s,v $
+;; Revision 1.4  2000/10/27  04:20:59  mark
+;; about to change from macro fetch in single routine fetch that
+;; maybe more cache efficent with alpha even though we have some extra
+;; jumps.
+;;
 ;; Revision 1.3  2000/10/13  12:32:30  mark
 ;; friday night checkin now has good part of vir to phy memory done
 ;;
@@ -35,10 +40,18 @@ vtophylabrx	.assigna	0
 	cmovlt	t0, v0, a0	/* move reg address to a0 instead */
 	br	endvtophyrx\&vtophylabrx
 checkcache\&vtophylabrx:
-	
+/* make key of sect+page */
+	srl	t0, 9, v0		/* get section + page */
+	subl	v0, ra, v0		/* subtract from lower 32bits of ra */
+	bne	v0, cachemiss\&vtophylabrx	/* not matched cache miss */
+/* here then we have a valid cache hit */
+	extwl	ra, 4, t6		/* get core pg no into t6 */
+	srl	ra, 32+15+5, t3		/* get GPWSC into t3 */
+	br	cstpgupd\&vtophylabrx
 
 VM\&vtophylabrx:
 	bne	ra, checkcache\&vtophylabrx
+cachemiss\&vtophylabrx:
 	ldq	t8, spt-MM(s1)!lituse_base!3	/* get spt */
 	bic	t8,t10,t8		/* clear non 36 bit part */
 
@@ -146,15 +159,68 @@ pgtblimed\&vtophylabrx:
 	lda	v0, -1(v0)		/* dec typeflags */
 	beq	v0, pgshar\&vtophylabrx	/* type=010 Shared */
 	lda	v0, -1(v0)		/* dec typeflags */
-	beq	v0, pgtblindr\&vtophylabrx	/* */
+	beq	v0, pgtblindir\&vtophylabrx	/* */
 	br	 FLTNOACC		/* if not zero it was not 011 shared must have been either 000 or 1xx so flt noacc */
+pgshar\&vtophylabrx:
+	bic	t6, t11, v0		/* get SPTX */
+	addq	t8, 0, v0 		/* SPT + SPTX */
+	s8addq	v0, s1, v0		/* convert to axp addr */
+	ldq	t6, (v0)		/* fetch pg ptr */
+	bic	t6, t10, t6		/* 36bits only */
+pgimed\&vtophylabrx:
+	sll	t6, 18, v0		/* get 6 bit that define core */
+	and	v0, 077, v0		/* 6 bits only */
+	bne	v0, FLTNOTCORE
+	bic	t6, t11, t6		/* get 18 bit storage address phy core pg */
+cstpgupd\&vtophylabrx:
+/* now have real user pgno of core in t6 do CST update */
+	ldq	v0, cst-MM(s1)!lituse_base!3	/* get CST pointer */
+	bic	v0, t10, v0		/* 36bits only */
+	addq	v0, t6, pv		/* CST+corepgno */
+	s8addq	pv, s1, pv		/* get axp address of CSTentry */
+	ldq	v0, (pv)		/* fetch CSTentry */
+	bic	v0, t10, v0		/* 36bits only */
+	sll	v0, 30, at		/* get top 6 bits of CSTentry */
+	beq	at, FLTNOACC		/* 0=noaccess */
+	ldq	at, cstmask-MM(s1)!lituse_base!3	/* get CSTmask */
+	bic	at, t10, at		/* 36bits only */
+	and	v0, at, v0		/* CSTentry and CSTmask */
+/* this is a fetch for rx so no need to do writeable page checks */
+/* allow the CST update even if public is failed later */
+	ldq	at, cstdata-MM(s1)!lituse_base!3	/* get CSTdata */
+	bic	at, t10, at		/* 36bits only */
+	or	v0, at, v0		/* CSTentry or CSTdata */
+	stq	v0, (pv)		/* store CSTentry back */
+
+	sll	t7, 9 , t6		/* cvt core pg no to PDP-10 address */
+	mov	510, v0
+	and	t0, v0, at		/* get 9 bit address of word in page */
+	addq	t6, at, v0		/* v0 = PDP-10 address of word in phy memory */
+	s8addq	v0, s1, a0		/* a0 = AXP address of word */
+/* t3 = G|P|W|S|C  now test public access of page */
+	srl	t3, 3, v0		/* get P flag in low bit */
+	blbs	v0, endvtophyrx\&vtophylabrx	/* branch page is public */
+/* ok its a private page aka concealed page are we in supervisor mode */
+	sll	s3, sll_public, v0	/* get processor flag P in sign */
+	bgt	v0, endvtophyrx\&vtophylabrx	/* branch we are in supervisor allow access */
+/* here if page is private and not in supervisor, check its a portal */
+	ldq	v0, (a0)		/* fetch the instruction */
+/* 	is it portal ? */
+	bic	v0, t10, v0		/* 36bits only */
+	srl	v0, 36-15, v0
+	mov	025404, at		/* portal instruction */
+	subq	v0, at, at
+	bne	at, FLTNOTPORTAL
+	sll	t3, 18, t3
+	srl	t6, 9, v0		/* get  back core pgno */
+	or	t6, t3, v0		/* get GPWSC+MBZ5bits+13bit corepgno  */
+	sll	v0, 32, v0		/* make room for section+pg */
+	srl	t0, 9, t3
+	or	t3, v0, ra		/* store new translation */
+
 /***********************************************/
 
 
-
-
-
-	
 endvtophyrx\&vtophylabrx:
 
 vtophylabrx	.assigna	\&vtophylabrx + 1
@@ -191,124 +257,10 @@ vtophylabw	.assigna	\&vtophylabw + 1
 ** Outputs: 
 .endm
 
-fetchlab	.assigna	0
-.macro fetch							 
-startfetch\&fetchlab:
-	/* fetch macro */							
-	/* PDP-10 PC = s2 */							
-	/* PDP-10 memory base reg = s1 */					
-	mov	s4, s5	/* setup reg base in s5 so PXCT can use s5 to drive */
-			/* intructions */
-startfetchpxct\&fetchlab: /* entry point for PXCT */
-	ldq	t2, interupt-MM(s1)!lituse_base!3				
-									
-	lda	t3,opjmp-inthdl(s0)!lituse_base!2  /*  base for hdl table */	
-	s8addq	t2,t3,v0		 /* get address of handler */	
-	bne	t2,l\&fetchlab		/* make sure its not zero */
-
-	and	s2, t11, t1		/* t1 get PC section part */ 		
-	lda	v0, 1(s2)		/* inc the PC */			
-									
-	bic	v0, t11, v0		/* v0 get PC 18bit and so wrap */	
-	or	t1, v0, s2		/* recombine PC with section part */	
-					/* put sect+incPC back to PC */ 	
-	mov	s2, t0			/* put full virt addr into t0 */
-	srl	t1, 18, t1		/* convert section mask to section number */
-/* now t0=5sectno+9bitpg+9bitwordaddr bit virtual  t1=5 bit sect no */
-
-	/* now convert pc in s2 t1=sectbits t0=VA  into a0 */	
- 	vtophy_rx
-					/* FETCH opcode from PC */		
-	ldq	a1,(a0)			/* a1 == fetch opcode	*/
-	blt	a1,brk\&fetchlab	/* branch if addr break */
-	bic	a1, t10, a1		/* clear off non 36 bit part */
-nobrk\&fetchlab:
-	srl	a1,27,a2		/* a2 == 9 bit opcode 	*/
-									
-	srl	a1,23,a3							
-	and	a3,0xf,a3		/* a3 == AC register */			
-										
-	srl	a1,18,a4							
-	and	a4,0xf,a4		/* a4 == X register  */			
-									
-	bic	a1,t11,a5		/* a5 == Y */				
-
-/* calc effective address part */
-	calc_e
-/* returns s6, a0 */
-/* Now the following is setup
-	s0 = PC
-	s6 = e
-	t1 = sect(e)
-	t3 = P|W|S|C
-	a0 = phyaddr(e)	      This may either be a register or pdp10core
-				in eithercase in is not a base 
-	s5 = effective regbase  PXCT will fiddle this register base
-	s4 = real regbase
-*/
-	
-									
-	s8addq	a2,s0,v0		/* lookup op func add in opjmp */	
-l\&fetchlab:								
-	ldq	v0,(v0)								
-	jmp	(v0)								
-
-brk\&fetchlab:
-	srl	a1,1,t3			/* get bit for addr break exec type */
-	bge	t3, nobrk\&fetchlab	/* branch if ist not a exec break */
-	bge	s3, nobrk\&fetchlab	/* branch is VM is not enabled */
-	sll	s3,21,t3		/* get flags Addr Fail Inhibit */
-	blt	t3, nobrk\&fetchlab	/* branch if Addr Fail Inhibit set */
-
-/* Note: Address break is only really valid if VM is enabled
-** since this mechanism is under our control finding an address break bit set
-** we can assume VM is enable
-** also KL10 only has one address break our implementation could support
-** many and we could enable many using console functions for debug purposes
-**
-** now handle address break on execute
-** address break is basically a page fail
-*/
-	/* work out a page fail word */
-	sll	s3, 18, v0		/* get User/Exec mode */
-	and	v0, 1,v0
-	sll	v0, 5, v0		/* make room for failure type */
-	or	v0, 0123, v0		/* set flags to Address failure */
-	sll	v0, 8, v0		/* make room for virtual address */
-	or	v0, t0, v0		/* add virtual address to word */
-/* reg UBR+500 base */
-	extwl	s3, 2, t4		/* get UBR */
-	sll	t4, 9, t4		/* calc PDP phy address */
-	addq	t4,s1, t4		/* calc axp base address of UPT */
-	mov	0500,t5
-	s8addq	t5,t4,t4		/* now have axp addres of page fail*/
-
-/* save page flag word @UPT+500 */
-	stq	v0, (t4)		/* 500 save page flag word */
-	lda	t4, 1(t4)		/* inc pointer */
-
-/* save Flag-PC double word @UPT+501, @UPT+502 */
-	extwl	s3, 7, t5		/* get PDP10 flag */
-	sll	t5, 23, v0		/* put them in correct part of 36bit*/
-	sll	t5, sll_user, t6	/* get User flag in sign bit, exec = 0*/
-	cmovgt	t6,zero, t1		/* clear currect section if in User*/
-	srl	t1, 18, t1		/* get in lower 5 bits */
-	or	t1, t1, v0		/* add PC section 2 Flag word */
-	stq	v0 , (t4)		/* save flag word */
-	lda	t4, 1(t4)		/* inc pointer */
-
-	stq	s2, (t4)		/* save virtual PC */
-	lda	t4, 1(t4)		/* inc pointer */
-/* load new PC from @UPT+503 and clear User and branch back to start fetch*/
-	bic	t5, msk_user, v0	/* clear User */
-	inswl	v0, 7 , s3		/* put flags back */
-	ldq	s2, (t4)		/* fetch new PC from 503 */
-	bic	s2, t10, s2		/* clear off non 36 bit part */
-	br	startfetch\&fetchlab	/* do it all over */
-
-fetchlab	.assigna	\&fetchlab + 1
+.macro fetch
+	br	fetch
 .endm
-	
+
 	.text
 	.align 4
 
@@ -358,10 +310,129 @@ cpu00:
 	ldah	t11, -4(zero)		/* t11 == 01777777777777777000000 18 bit bic mask*/ 		
 	sll	t11, 18, t10		/* t10 == 01777777777000000000000 36 bit bic mask */
 	mov	zero, ra		/* clear page cache register */
+fetch:
+startfetch:
+	/* fetch macro */							
+	/* PDP-10 PC = s2 */							
+	/* PDP-10 memory base reg = s1 */					
+	mov	s4, s5	/* setup reg base in s5 so PXCT can use s5 to drive */
+			/* intructions */
+startfetchpxct: /* entry point for PXCT */
+	ldq	at, interupt-MM(s1)!lituse_base!3				
+									
+	lda	pv,opjmp-inthdl(s0)!lituse_base!2  /*  base for hdl table */	
+	s8addq	at, pv, v0		 /* get address of handler */	
+	bne	at,dispatch		/* COND DISP request interupt != 0 */
 
-	fetch
+/* INC PC */
+	and	s2, t11, t1		/* t1 get PC section part */ 		
+	lda	v0, 1(s2)		/* inc the PC */			
+									
+	bic	v0, t11, v0		/* v0 get PC 18bit and so wrap */	
+	or	t1, v0, s2		/* recombine PC with section part */	
+					/* put sect+incPC back to PC */ 	
+	mov	s2, t0			/* put full virt addr into t0 */
+	srl	t1, 18, t1		/* convert section mask to section number */
+/* now t0=5sectno+9bitpg+9bitwordaddr bit virtual  t1=5 bit sect no */
+
+	/* now convert pc in s2 t1=sectbits t0=VA  into a0 */	
+ 	vtophy_rx
+					/* FETCH opcode from PC */		
+	ldq	a1,(a0)			/* a1 == fetch opcode	*/
+	blt	a1,addrbrk		/* branch if addr break */
+	bic	a1, t10, a1		/* clear off non 36 bit part */
+noaddrbrk:
+	srl	a1,27,a2		/* a2 == 9 bit opcode 	*/
+									
+	srl	a1,23,a3							
+	and	a3,0xf,a3		/* a3 == AC register */			
+										
+	srl	a1,18,a4							
+	and	a4,0xf,a4		/* a4 == X register  */			
+									
+	bic	a1,t11,a5		/* a5 == Y */				
+
+/* calc effective address part */
+	calc_e
+/* returns s6, a0 */
+/* Now the following is setup
+	s0 = PC
+	s6 = e
+	t1 = sect(e)
+	t3 = G|P|W|S|C
+	a0 = phyaddr(e)	      This may either be a register or pdp10core
+				in eithercase in is not a base 
+	s5 = effective regbase  PXCT will fiddle this register base
+	s4 = real regbase
+*/
 	
+	s8addq	a2,s0,v0		/* lookup op func add in opjmp */	
+dispatch:
+	ldq	v0,(v0)								
+	jmp	(v0)								
 
+addrbrk:
+/* can use a2 as a temp here since branch back to noaddrbrk is before its loaded */
+	srl	a1,1,a2			/* get bit for addr break exec type */
+	bge	a2, noaddrbrk		/* branch if ist not a exec break */
+	bge	a2, noaddrbrk		/* branch is VM is not enabled */
+	sll	s3,21,a2		/* get flags Addr Fail Inhibit */
+	blt	a2, noaddrbrk		/* branch if Addr Fail Inhibit set */
+
+/* Note: Address break is only really valid if VM is enabled
+** since this mechanism is under our control finding an address break bit set
+** we can assume VM is enable
+** also KL10 only has one address break our implementation could support
+** many and we could enable many using console functions for debug purposes
+**
+** now handle address break on execute
+** address break is basically a page fail
+
+* Continue using a2 and now a3, a4 as temp's thought the address break they will not be loaded
+* now till next fetch
+*/
+	/* work out a page fail word */
+	sll	s3, 18, v0		/* get User/Exec mode */
+	and	v0, 1,v0
+	sll	v0, 5, v0		/* make room for failure type */
+	or	v0, 0123, v0		/* set flags to Address failure */
+	sll	v0, 8, v0		/* make room for virtual address */
+	or	v0, t0, v0		/* add virtual address to word */
+/* reg UBR+500 base */
+	extwl	s3, 2, a2		/* get UBR */
+	sll	a2,  9, a2		/* calc PDP phy address */
+	addq	a2, s1, a2		/* calc axp base address of UPT */
+	mov	0500, a3
+	s8addq	a3,a2,a2		/* now have axp addres of page fail*/
+
+/* save page flag word @UPT+500 */
+	stq	v0, (a2)		/* 500 save page flag word */
+	lda	a2, 1(a2)		/* inc pointer */
+
+/* save Flag-PC double word @UPT+501, @UPT+502 */
+	extwl	s3, 7, a3		/* get PDP10 flag */
+	sll	a3, 23, v0		/* put them in correct part of 36bit*/
+	sll	a3, sll_user, a4	/* get User flag in sign bit, exec = 0*/
+	cmovgt	a4, zero, a4		/* clear currect section if in User*/
+	srl	a4, 18, a4		/* get in lower 5 bits */
+	or	a4, a4, v0		/* add PC section 2 Flag word */
+	stq	v0 , (a2)		/* save flag word */
+	lda	a2, 1(a2)		/* inc pointer */
+
+	stq	s2, (a2)		/* save virtual PC */
+	lda	a2, 1(a2)		/* inc pointer */
+/* load new PC from @UPT+503 and clear User and branch back to start fetch*/
+	bic	a3, msk_user, v0	/* clear User */
+	inswl	v0, 7 , s3		/* put flags back */
+	ldq	s2, (a2)		/* fetch new PC from 503 */
+	bic	s2, t10, s2		/* clear off non 36 bit part */
+	br	startfetch		/* do it all over */
+
+FLTNOTPORTAL:
+FLTNOTCORE:
+FLTNOACC:
+	br	fetch
+	
 exit_cpu:	# this should never happen but its here if we need it
 	ldq	ra, 0(sp)
 	ldq	s0, 8(sp)
@@ -382,8 +453,6 @@ exit_cpu:	# this should never happen but its here if we need it
 	lda	sp, 128(sp)
 	trapb
 	ret	$31,($26),1			# end proc and return
-FLTNOTCORE:
-FLTNOACC:
 /*===Normal ops========*/
 E_LUU0:			# Local Unimplemented User Operations
 			#	op001 LUUO01
