@@ -1,5 +1,8 @@
-/*@(#)$Id: kl10m.s,v 1.1 2000/08/27 12:18:48 mark Exp mark $
+/*@(#)$Id: kl10m.s,v 1.2 2000/10/03 00:31:24 mark Exp mark $
 * @(#)$Log: kl10m.s,v $
+;; Revision 1.2  2000/10/03  00:31:24  mark
+;; cpt
+;;
 * Revision 1.1  2000/08/27  12:18:48  mark
 * Initial revision
 *
@@ -15,34 +18,167 @@
 	.include "opjmp.h"	/* opjmp is ref by base reg s0 */
 	.include "kl10_a.h"	/* MM is reg by base reg s1 */
 
+vtophylabrx	.assigna	0
+.macro	vtophy_rx
+/* Virtual to physical address with reference type of FETCH
+** Inputs:	t0 = 23bit virtual
+**		t1 = 5/9 bit section number
+**		t2 = 18bit insection address
+** Outputs:	a0 = phy address (axp) may point to a reg or in KL memory
+*/
+	blt	s3, VM\&vtophylabrx
+	s8addq	t0, s1, a0	/* get phy axp address membase s1 */
+	s8addq	t0, s4, t6	/* calc if it was a register base s4  fetch always is the current AC block read or write use s5*/
+	subq	t0,017, t5	/* is the address inside the accumlators */
+	cmovlt	t0, t6, a0	/* move reg address to a0 instead */
+	br	endvtophyr\&vtophylabrx
+VM\&vtophylabrx:
+	ldq	t8, spt-MM(s1)!lituse_base!3	/* get spt */
+	xor	t8,t10,t8		/* clear non 36 bit part */
+
+	sll	s3, sll_user, v0	/* move user flag to sign */
+	extwl	s3, 0, t4		/* get EBR  in t4 */
+	extwl	s3, 2, t5		/* get UBR  in t5 */
+	cmovgt	v0, t5, t4		/* if user ==1 then UBR */
+	sll	t4, 9 , t4		/* Base reg is a page number shift left so its a PDP10 word address */
+/* now t4 is process base register either UBR or EBR */
+	mov	USECT, v0		/* USECT == ESECT ==440 */
+	addq	v0, t1, v0		/* SECTNO+0440 */
+	addq	v0, t4, v0		/* still PDP10 address add SECTNO+440+BASE */
+	mov	015, t3			/* set flags PWC = 1 */
+	s8addq	v0, s1, v0		/* convert to axp address using memory base s1 */
+	ldq	t6, (v0)		/* fetch page table pointer */
+	xor	t6, t10, t6		/* clear non  36bit part */
+
+fetchptr\&vtophylabrx:
+/* t6 = ar = fetched page table pointer */
+	srl	t6, 29, t7		/* get page flags P,W,C in lower 4 bits of t7 ...|P|W|0|C| */
+	and	t3, t7, t3		/* and the flags with current PWC */
+	srl	t6, 36-3, v0		/* get type flags in v0 */
+	lda	v0, -1(v0)		/* dec typeflags */
+	beq	v0, pgimed\&vtophylabrx	/* type=001 Immediate */
+	lda	v0, -1(v0)		/* dec typeflags */
+	beq	v0, pgshar\&vtophylabrx	/* type=010 Shared */
+	lda	v0, -1(v0)		/* dec typeflags */
+	bne	v0, FLTNOACC		/* if not zero it was not 011 shared must have been either 000 or 1xx so flt noacc */
+/* type=011 Indirect */
+	srl	t6, 18, t1		/* get new section number */
+	mov	511, v0			/* 9 bit and mask */
+	and	t1, v0, t1		/* get lower 9 bits as section number */
+
+	xor	t6, t11, v0		/* get 18 bit SPTX */
+	addq	t8, v0, v0		/* SPT+SPTX */
+	s8addq	v0, s1, v0		/* convert to AXP address */
+	ldq	t6, (v0)		/* fetch storage address */
+	xor	t6, t10, t6		/* clear non 36 bit */
+
+	srl	t6, 18, v0		/* get 6 bits that define in core */
+	and	v0, 077, v0		/* clear off anything but 6 bit core flag */
+	bne	v0, FLTNOTCORE		/* branch if not in core */
+
+	xor	t6, t11, v0		/* get 18 bits if storage address  5bitsMBZ+13bit corepgno*/
+	sll	v0, 9, v0		/* convert page no to PDP-10 phy address */
+	addq	t1, v0, v0		/* add 9 bits of section index */
+	s8addq	v0, s1, v0		/* convert to axp address
+	ldq	t6,(v0)			/* fetch new page table pointer */
+	xor	t6, t10, t6		/* clear non 36 bit part */
+	br	fetchptr\&vtophylabrx	/* branch backward and do it all again */
+	
+pgshared\&vtophylabrx:
+	xor	t6,t11, v0		/* get SPTX 18 bits */
+	addq	t8, v0, v0		/* SPT+SPTX */
+
+	s8addq	v0, s1, v0		/* get axp address */
+	ldq	t6, (v0)		/* fetch new pointer */
+	xor	t6, t10, t6		/* clear non 36 bit part */
+
+pgimed\&vtophylabrx:
+/* now have a storage address of page table in t6 */
+	srl	t6, 18, v0
+	and	v0, 077, v0
+	bne	FLTNOTCORE
+
+	xor	t6, t11, t7		/* get 18 bits if storage address  5bitsMBZ+13bit corepgno*/
+	sll	t7, 9 , v0		/* convert core page no to address */
+	s8addq	v0, s1, v0		/* convert to axp address of page table */
+/* now do CST things t7 == corepagenno
+	
+	ldq	t8, cst-MM(s1)!lituse_base!3	/* get CST table pointer */	
+	xor	t8, t10, t8		/* clear non 36 bit part */
+	addq	t8, t7, v0		/* get CST+corepageno in v0 */
+	s8addq	v0, s1, v0		/* get axp address of CST entry */
+	ldq	t12, (v0)		/* fetch CST entry */
+	xor	t12, t10, t12		/* clear non 36 bit part */
+	
+endvtophyr\&vtophylabrx:
+
+vtophylabrx	.assigna	\&vtophylabrx + 1
+.endm
+
+
+vtophylabr	.assigna	0
+.macro	vtophy_r
+/* Virtual to physical address with reference type of READ
+** Inputs:	t0 = 23bit virtual
+**		t1 = 5 bit section number
+**		t2 = 18bit insection address
+** Outputs:	a0 = phy address (axp) may point to a reg or in KL memory
+*/
+	blt	s3, VM\&vtophylabrx
+vtophylabrx	.assigna	\&vtophylabrx + 1
+.endm
+
+vtophylabw	.assigna	0
+.macro	vtophy_w
+/* Virtual to physical address with reference type of WRITE
+** Inputs:	t0 = 23bit virtual
+**		t1 = 5 bit section number
+**		t2 = 18bit insection address
+** Outputs:	a0 = phy address (axp) may point to a reg or in KL memory
+*/
+	blt	s3, novm\&tophylabw
+novm\&vtophylabw:
+vtophylabw	.assigna	\&vtophylabw + 1
+.endm
+
+.macro	calc_e
+/* Calc Effective address
+** Inputs:
+** Outputs: 
+.endm
+
 fetchlab	.assigna	0
 .macro fetch							 
+startfetch\&fetchlab:
 	/* fetch macro */							
 	/* PDP-10 PC = s2 */							
 	/* PDP-10 memory base reg = s1 */					
-	ldq	v0, interupt-MM(s1)!lituse_base!3				
+	mov	s4, s5	/* setup reg base in s5 so PXCT can use s5 to drive */
+			/* intructions */
+startfetchpxct\&fetchlab: /* entry point for PXCT */
+	ldq	t2, interupt-MM(s1)!lituse_base!3				
 									
 	lda	t3,opjmp-inthdl(s0)!lituse_base!2  /*  base for hdl table */	
-	s8addq	v0,t3,t9		 /* get address of handler */	
-	bne	v0,l\&fetchlab		/*  need a real assembler */		
-									
-	ldah	t10, 4(zero)							
-	lda	t10,-1(t10)		/* 0777777 */ 				
-	ldah	t11, -4(zero)		/* 01777777777777777000000 */ 		
+	s8addq	t2,t3,v0		 /* get address of handler */	
+	bne	t2,l\&fetchlab		
+
 									
 	and	s2,t11,t1		/* t1 get PC section part */ 		
 	lda	s2,1(s2)		/* inc the PC */			
 									
-	and	s2,t10,t2		/* t2 get PC 18bit and so wrap */	
+	xor	s2,t11,t2		/* t2 get PC 18bit and so wrap */	
 	or	t1,t2,s2		/* recombine PC with section part */	
 					/* put sect+incPC back to PC */ 	
-	/* now convert pc in s2 t1=sectbits t2=18bitaddr VIR-PHY  into a0 */	
-	mov	s2, a0			/* for the moment no VM */		
-					/* FETCH opcode from PC */		
-	s8addq	a0,s1,a0		/* a0 is the word calc AXP addr */	
-	ldq	a1,(a0)			/* a1 == fetch opcode	*/
-	bge	a1,nobrk\&fetchlab	/* branch if no addr break */
+	mov	s2, t0			/* put full virt addr into t0 */
+	srl	t1, 18, t1		/* convert section mask to section number */
+/* now t0=5+18 bit virtual  t1=5 bit sect  t2 = 18bit insect addr */
 
+	/* now convert pc in s2 t1=sectbits t2=18bitaddr VIR-PHY  into a0 */	
+ 	vtophy_r
+					/* FETCH opcode from PC */		
+	ldq	a1,(a0)			/* a1 == fetch opcode	*/
+	blt	a1,brk\&fetchlab	/* branch if addr break */
+	xor	a1, t10, a1		/* clear off non 36 bit part */
 nobrk\&fetchlab:
 	srl	a1,27,a2		/* a2 == 9 bit opcode 	*/
 									
@@ -52,15 +188,81 @@ nobrk\&fetchlab:
 	srl	a1,18,a4							
 	and	a4,0xf,a4		/* a4 == X register  */			
 									
-	and	a1,t11,t3		/* a5 == Y */				
-	and	a1,t12,t4							
-	bis	t3,t4,a5							
+	xor	a1,t11,a5		/* a5 == Y */				
+
+/* calc effective address part */
+	calc_e
+/* Now the following is setup
+	s0 = PC
+	t0 = e
+	t1 = sect(e)
+	t2 = insect(e)
+	a0 = phyaddr(e)	      This may either be a register or pdp10core
+				in eithercase in is not a base 
+	s5 = effective regbase  PXCT will fiddle this register base
+	s4 = real regbase
+*/
+	
 									
-	s8addq	a2,s0,t9		/* lookup op func add in opjmp */	
+	s8addq	a2,s0,v0		/* lookup op func add in opjmp */	
 l\&fetchlab:								
+	ldq	v0,(v0)								
+	jmp	(v0)								
+
+brk\&fetchlab:
+	srl	a1,1,t3			/* get bit for addr break exec type */
+	bge	t3, nobrk\&fetchlab	/* branch if ist not a exec break */
+	bge	s3, nobrk\&fetchlab	/* branch is VM is not enabled */
+	sll	s3,21,t3		/* get flags Addr Fail Inhibit */
+	blt	t3, nobrk\&fetchlab	/* branch if Addr Fail Inhibit set */
+
+/* Note: Address break is only really valid if VM is enabled
+** since this mechanism is under our control finding an address break bit set
+** we can assume VM is enable
+** also KL10 only has one address break our implementation could support
+** many and we could enable many using console functions for debug purposes
+**
+** now handle address break on execute
+** address break is basically a page fail
+*/
+	/* work out a page fail word */
+	sll	s3, 18, v0		/* get User/Exec mode */
+	and	v0, 1,v0
+	sll	v0, 5, v0		/* make room for failure type */
+	or	v0, 0123, v0		/* set flags to Address failure */
+	sll	v0, 8, v0		/* make room for virtual address */
+	or	v0, t0, v0		/* add virtual address to word */
+/* reg UBR+500 base */
+	extwl	s3, 2, t4		/* get UBR */
+	sll	t4, 9, t4		/* calc PDP phy address */
+	addq	t4,s1, t4		/* calc axp base address of UPT */
+	mov	0500,t5
+	s8addq	t5,t4,t4		/* now have axp addres of page fail*/
+
+/* save page flag word @UPT+500 */
+	stq	v0, (t4)		/* 500 save page flag word */
+	lda	t4, 1(t4)		/* inc pointer */
+
+/* save Flag-PC double word @UPT+501, @UPT+502 */
+	extwl	s3, 7, t5		/* get PDP10 flag */
+	sll	t5, 23, v0		/* put them in correct part of 36bit*/
+	sll	t5, sll_user, t6	/* get User flag in sign bit, exec = 0*/
+	cmovgt	t6,zero, t1		/* clear currect section if in User*/
+	srl	t1, 18, t1		/* get in lower 5 bits */
+	or	t1, t1, v0		/* add PC section 2 Flag word */
+	stq	v0 , (t4)		/* save flag word */
+	lda	t4, 1(t4)		/* inc pointer */
+
+	stq	s2, (t4)		/* save virtual PC */
+	lda	t4, 1(t4)		/* inc pointer */
+/* load new PC from @UPT+503 and clear User and branch back to start fetch*/
+	xor	t5, msk_user, v0	/* clear User */
+	inswl	v0, 7 , s3		/* put flags back */
+	ldq	s2, (t4)		/* fetch new PC from 503 */
+	xor	s2, t10, s2		/* clear off non 36 bit part */
+	br	startfetch\&fetchlab	/* do it all over */
+
 fetchlab	.assigna	\&fetchlab + 1
-	ldq	t7,(t9)								
-	jmp	(t7)								
 .endm
 	
 	.text
@@ -102,11 +304,15 @@ cpu00:
 
 	ldq	s2, PC-MM(s1)!lituse_base!3 # load PC
 	ldq	s3, flags-MM(s1)!lituse_base!3 # load flags
-	srl	s3, 13+13,t0
-	and	t0, 07, t0		# current accumulator block idx
-	sll	t0,4,t0			# get index into reg table idx*16
+
 	lda	t1,r0_0-MM(s1)!lituse_base!3 # regfile base addr	
-	addq	t0,t1,s4		# base+16*idx :axp address of accblk 
+	extwl	s3,5,v0			# get PAB|CAB from flags reg s3
+	and	v0,07,v0		# get CAB current accumulator block idx
+	mul	v0, 16*8, v0		# cal index into reg file 16 reg by 8 byte per reg
+	addq	v0,t1,s4		# base+16*8*idx :axp address of accblk 
+
+	ldah	t11, -4(zero)		/* t11 == 01777777777777777000000 18 bit xor mask*/ 		
+	sll	t11, 18, t10		/* t10 == 01777777777000000000000 36 bit xor mask */
 
 	fetch
 	
@@ -131,7 +337,8 @@ exit_cpu:	# this should never happen but its here if we need it
 	lda	sp, 128(sp)
 	trapb
 	ret	$31,($26),1			# end proc and return
-
+FLTNOTCORE:
+FLTNOACC:
 /*===Normal ops========*/
 E_LUU0:			# Local Unimplemented User Operations
 			#	op001 LUUO01
