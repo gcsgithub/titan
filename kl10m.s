@@ -1,16 +1,19 @@
-/*@(#)$Id:$
-* @(#)$Log:$
+/*@(#)$Id: kl10m.s,v 1.1 2000/08/27 12:18:48 mark Exp mark $
+* @(#)$Log: kl10m.s,v $
+* Revision 1.1  2000/08/27  12:18:48  mark
+* Initial revision
+*
 */
-#include <regdef.h>
 
         .arch ev4
 	.set noat
         .set volatile
 	.set noreorder
-/*	.set nomacro */
+	.set nomacro 
 
-#include "opjmp.h" 	/* opjmp is ref by base reg s0 */
-#include "regmem.h"	/* MM is reg by base reg s1 */
+	.include "regdef.h"	/* define register names */
+	.include "opjmp.h"	/* opjmp is ref by base reg s0 */
+	.include "kl10_a.h"	/* MM is reg by base reg s1 */
 
 fetchlab	.assigna	0
 .macro fetch							 
@@ -38,6 +41,9 @@ fetchlab	.assigna	0
 					/* FETCH opcode from PC */		
 	s8addq	a0,s1,a0		/* a0 is the word calc AXP addr */	
 	ldq	a1,(a0)			/* a1 == fetch opcode	*/
+	bge	a1,nobrk\&fetchlab	/* branch if no addr break */
+
+nobrk\&fetchlab:
 	srl	a1,27,a2		/* a2 == 9 bit opcode 	*/
 									
 	srl	a1,23,a3							
