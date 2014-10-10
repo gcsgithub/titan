@@ -1,5 +1,8 @@
-/*@(#)$Id: kl10m.s,v 1.4 2000/10/27 04:20:59 mark Exp mark $
+/*@(#)$Id: kl10m.s,v 1.5 2000/10/27 13:07:45 mark Exp mark $
 * @(#)$Log: kl10m.s,v $
+;; Revision 1.5  2000/10/27  13:07:45  mark
+;; now have completed code for vtophyrx - bet it has buggs
+;;
 ;; Revision 1.4  2000/10/27  04:20:59  mark
 ;; about to change from macro fetch in single routine fetch that
 ;; maybe more cache efficent with alpha even though we have some extra
@@ -312,7 +315,6 @@ cpu00:
 	mov	zero, ra		/* clear page cache register */
 fetch:
 startfetch:
-	/* fetch macro */							
 	/* PDP-10 PC = s2 */							
 	/* PDP-10 memory base reg = s1 */					
 	mov	s4, s5	/* setup reg base in s5 so PXCT can use s5 to drive */
