@@ -1,1 +1,287 @@
-	# Start of registers just before MM memory area	.data	.comm	emboxreg 33555480	# Start of registers just before MM memory area	# use var - MM offset from base reg pointing to MM	# load base as emboxreg+MM	#.struct	0emboxstart: # indexed by s4 and s5 	    # s5 is axp base for effective reg base and is the one the instructions reference	    #  		when s4 != s5 then we are doing some PXCT stuff	    # s4 is axp base for CAB 	    # PAB or CAB 3 bits  (PAB*16)+reg# + r0_0-MM(S1)	    # or (CAB*16)+reg# + r0_0-MM(s1)r0_0:	.quad	0r0_1:	.quad	0r0_2:	.quad	0r0_3:	.quad	0r0_4:	.quad	0r0_5:	.quad	0r0_6:	.quad	0r0_7:	.quad	0r0_8:	.quad	0r0_9:	.quad	0r0_10:	.quad	0r0_11:	.quad	0r0_12:	.quad	0r0_13:	.quad	0r0_14:	.quad	0r0_15:	.quad	0r1_0:	.quad	0r1_1:	.quad	0r1_2:	.quad	0r1_3:	.quad	0r1_4:	.quad	0r1_5:	.quad	0r1_6:	.quad	0r1_7:	.quad	0r1_8:	.quad	0r1_9:	.quad	0r1_10:	.quad	0r1_11:	.quad	0r1_12:	.quad	0r1_13:	.quad	0r1_14:	.quad	0r1_15:	.quad	0r2_0:	.quad	0r2_1:	.quad	0r2_2:	.quad	0r2_3:	.quad	0r2_4:	.quad	0r2_5:	.quad	0r2_6:	.quad	0r2_7:	.quad	0r2_8:	.quad	0r2_9:	.quad	0r2_10:	.quad	0r2_11:	.quad	0r2_12:	.quad	0r2_13:	.quad	0r2_14:	.quad	0r2_15:	.quad	0r3_0:	.quad	0r3_1:	.quad	0r3_2:	.quad	0r3_3:	.quad	0r3_4:	.quad	0r3_5:	.quad	0r3_6:	.quad	0r3_7:	.quad	0r3_8:	.quad	0r3_9:	.quad	0r3_10:	.quad	0r3_11:	.quad	0r3_12:	.quad	0r3_13:	.quad	0r3_14:	.quad	0r3_15:	.quad	0r4_0:	.quad	0r4_1:	.quad	0r4_2:	.quad	0r4_3:	.quad	0r4_4:	.quad	0r4_5:	.quad	0r4_6:	.quad	0r4_7:	.quad	0r4_8:	.quad	0r4_9:	.quad	0r4_10:	.quad	0r4_11:	.quad	0r4_12:	.quad	0r4_13:	.quad	0r4_14:	.quad	0r4_15:	.quad	0r5_0:	.quad	0r5_1:	.quad	0r5_2:	.quad	0r5_3:	.quad	0r5_4:	.quad	0r5_5:	.quad	0r5_6:	.quad	0r5_7:	.quad	0r5_8:	.quad	0r5_9:	.quad	0r5_10:	.quad	0r5_11:	.quad	0r5_12:	.quad	0r5_13:	.quad	0r5_14:	.quad	0r5_15:	.quad	0cstmsk:r6_0:	.quad	0cstdata:r6_1:	.quad	0cst:r6_2:	.quad	0spt:r6_3:	.quad	0r6_4:	.quad	0r6_5:	.quad	0r6_6:	.quad	0r6_7:	.quad	0r6_8:	.quad	0r6_9:	.quad	0r6_10:	.quad	0r6_11:	.quad	0r6_12:	.quad	0r6_13:	.quad	0r6_14:	.quad	0r6_15:	.quad	0r7_0:	.quad	0r7_1:	.quad	0r7_2:	.quad	0r7_3:	.quad	0r7_4:	.quad	0r7_5:	.quad	0r7_6:	.quad	0r7_7:	.quad	0r7_8:	.quad	0r7_9:	.quad	0r7_10:	.quad	0r7_11:	.quad	0r7_12:	.quad	0r7_13:	.quad	0r7_14:	.quad	0r7_15:	.quad	0/*  index into reg set Current Accumulator Block	3bits previous context accumulator block		3bits Previous context Section include bit8=PCU	5bits Previous Context User Current sec is from PC if flags is neg ie sign bit set then VM is enabled allows a quick way to verify VM onReg usage:s0 == opjumpbases1 == membases2 == PCs3 == Flags ( see below )s4 == regbase CAB ( referenses the reall Current Accumulators )s5 == regbase effective (used by all instructions as register base )When flags are negative VM is enabledLogical bit usage Flags |1bit |       |13bits    |1bit|1bit|5bits|3bits|3bits|13bits|13bits|       |VMena|MBZ    |PDP-flags |PCU |PCP |PCS  |PAB  |CAB  | UBR  | EBR  |Physical bit usage so alpha extract/insert can be used Flags |1bit | 9bits |16bits    |1bit|1bit|1bit|5bits|4bits|4bits|16bits|16bits|       |VMena|MBZ    |PDP-flags |MBZ |PCU |PCP |PCS  |PAB  |CAB  | UBR  | EBR  |VMena	Virtual Memory Enabled (sign bit)MBZ	Must Be ZeroPDP-flags	PDP-10 flagsPCU	Previous Context UserPCP	Previous Context PublicPCS	Previous Context Section (PC section)PAB	Previous Accumulator BlockCAB	Current  Accumulator BlockUBR	User Base RegisterEBR	Executive Base RegisterPDP-flags (16bits lower 13 bits belong to PDP10)*//* Shift Left Logical so that bit is in axp sign */sll_prevcpub	.equ	13sll_overflow	.equ	13sll_carry0	.equ	14sll_carry1	.equ	15sll_floatovr	.equ	16sll_fpd		.equ	17sll_user	.equ	18sll_userio	.equ	19sll_prevcuser	.equ	19sll_public	.equ	20sll_addrfinh	.equ	21sll_trap2	.equ	22sll_trap1	.equ	23sll_floatund	.equ	24sll_nodiv	.equ	25/* Shift Right Logicals so that bit is in low bit axp */srl_prevcpub	.equ	12srl_overflow	.equ	12srl_carry0	.equ	11srl_carry1	.equ	10srl_floatovr	.equ	9srl_fpd		.equ	8srl_user	.equ	7srl_userio	.equ	6srl_prevcuser	.equ	6srl_public	.equ	5srl_addrfinh	.equ	4srl_trap2	.equ	3srl_trap1	.equ	2srl_floatund	.equ	1srl_nodiv	.equ	0/* Bit Mask for xor to clear and to get  13 bits wide */msk_prevcpub	.equ	010000msk_overflow	.equ	010000msk_carry0	.equ	004000msk_carry1	.equ	002000msk_floatovr	.equ	001000msk_fpd		.equ	000400msk_user	.equ	000200msk_userio	.equ	000100msk_prevcuser	.equ	000100msk_public	.equ	000040msk_addrfinh	.equ	000020msk_trap2	.equ	000010msk_trap1	.equ	000004msk_floatund	.equ	000002msk_nodiv	.equ	000001/* process table definitions */USECT	.equ	0440ESECT	.equ	0440/*+-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+|3bits|Overflow    |      |      |Floating|    |    |User IO     |      |Address|     |     |Floating | No   ||     |Prev context|Carry0|Carry1|Overflow|FPD |User|Prev Context|Public|Failure|Trap2|Trap1|underflow|Divide||     |public      |      |      |        |    |    |User        |      |Inhibit|     |     |         |      |+-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+| MBZ | 1 bit      | 1bit |1bit  | 1bit   |1bit|1bit| 1bit       | 1bit | 1bit  | 1bit|1bit | 1bit    |1bit  |+-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+ ^10   ^13           ^14    ^15    ^16      ^17  ^18  ^19         ^20     ^21     ^22   ^23    ^24      ^25 ^^^^^^^sll s3,X The above numbers correspond to how many bits to shift s3 left by 2 get that PDP10flags into the axp sign bit*/flags:	.quad	0		# storage locations only after consolePC:	.quad	0		# interupt requesting they be savedusec:	.quad	0		# micro second counterusec10:	.quad	0		# 10micro second counterinterupt:	.quad	0	# fe will indicate interupt with nozeroMM:	.quad	0:4194304	# each word lower 36bits is PDP-10 word bit 63 is address break on	# real 10 only has one address we can support address break	# on each and every word fetched for execution	# this leaves 27 bits unassignedemboxend:
+	# Start of registers just before MM memory area
+	.data
+	.comm	emboxreg 33555480
+
+	# Start of registers just before MM memory area
+	# use var - MM offset from base reg pointing to MM
+	# load base as emboxreg+MM
+	#
+.struct	0
+emboxstart: # indexed by s4 and s5 
+	    # s5 is axp base for effective reg base and is the one the instructions reference
+	    #  		when s4 != s5 then we are doing some PXCT stuff
+	    # s4 is axp base for CAB 
+	    # PAB or CAB 3 bits  (PAB*16)+reg# + r0_0-MM(S1)
+	    # or (CAB*16)+reg# + r0_0-MM(s1)
+
+r0_0:	.quad	0
+r0_1:	.quad	0
+r0_2:	.quad	0
+r0_3:	.quad	0
+r0_4:	.quad	0
+r0_5:	.quad	0
+r0_6:	.quad	0
+r0_7:	.quad	0
+r0_8:	.quad	0
+r0_9:	.quad	0
+r0_10:	.quad	0
+r0_11:	.quad	0
+r0_12:	.quad	0
+r0_13:	.quad	0
+r0_14:	.quad	0
+r0_15:	.quad	0
+
+
+r1_0:	.quad	0
+r1_1:	.quad	0
+r1_2:	.quad	0
+r1_3:	.quad	0
+r1_4:	.quad	0
+r1_5:	.quad	0
+r1_6:	.quad	0
+r1_7:	.quad	0
+r1_8:	.quad	0
+r1_9:	.quad	0
+r1_10:	.quad	0
+r1_11:	.quad	0
+r1_12:	.quad	0
+r1_13:	.quad	0
+r1_14:	.quad	0
+r1_15:	.quad	0
+
+r2_0:	.quad	0
+r2_1:	.quad	0
+r2_2:	.quad	0
+r2_3:	.quad	0
+r2_4:	.quad	0
+r2_5:	.quad	0
+r2_6:	.quad	0
+r2_7:	.quad	0
+r2_8:	.quad	0
+r2_9:	.quad	0
+r2_10:	.quad	0
+r2_11:	.quad	0
+r2_12:	.quad	0
+r2_13:	.quad	0
+r2_14:	.quad	0
+r2_15:	.quad	0
+
+r3_0:	.quad	0
+r3_1:	.quad	0
+r3_2:	.quad	0
+r3_3:	.quad	0
+r3_4:	.quad	0
+r3_5:	.quad	0
+r3_6:	.quad	0
+r3_7:	.quad	0
+r3_8:	.quad	0
+r3_9:	.quad	0
+r3_10:	.quad	0
+r3_11:	.quad	0
+r3_12:	.quad	0
+r3_13:	.quad	0
+r3_14:	.quad	0
+r3_15:	.quad	0
+
+r4_0:	.quad	0
+r4_1:	.quad	0
+r4_2:	.quad	0
+r4_3:	.quad	0
+r4_4:	.quad	0
+r4_5:	.quad	0
+r4_6:	.quad	0
+r4_7:	.quad	0
+r4_8:	.quad	0
+r4_9:	.quad	0
+r4_10:	.quad	0
+r4_11:	.quad	0
+r4_12:	.quad	0
+r4_13:	.quad	0
+r4_14:	.quad	0
+r4_15:	.quad	0
+
+r5_0:	.quad	0
+r5_1:	.quad	0
+r5_2:	.quad	0
+r5_3:	.quad	0
+r5_4:	.quad	0
+r5_5:	.quad	0
+r5_6:	.quad	0
+r5_7:	.quad	0
+r5_8:	.quad	0
+r5_9:	.quad	0
+r5_10:	.quad	0
+r5_11:	.quad	0
+r5_12:	.quad	0
+r5_13:	.quad	0
+r5_14:	.quad	0
+r5_15:	.quad	0
+
+cstmsk:
+r6_0:	.quad	0
+
+cstdata:
+r6_1:	.quad	0
+
+cst:
+r6_2:	.quad	0
+
+spt:
+r6_3:	.quad	0
+
+r6_4:	.quad	0
+r6_5:	.quad	0
+r6_6:	.quad	0
+r6_7:	.quad	0
+r6_8:	.quad	0
+r6_9:	.quad	0
+r6_10:	.quad	0
+r6_11:	.quad	0
+r6_12:	.quad	0
+r6_13:	.quad	0
+r6_14:	.quad	0
+r6_15:	.quad	0
+
+r7_0:	.quad	0
+r7_1:	.quad	0
+r7_2:	.quad	0
+r7_3:	.quad	0
+r7_4:	.quad	0
+r7_5:	.quad	0
+r7_6:	.quad	0
+r7_7:	.quad	0
+r7_8:	.quad	0
+r7_9:	.quad	0
+r7_10:	.quad	0
+r7_11:	.quad	0
+r7_12:	.quad	0
+r7_13:	.quad	0
+r7_14:	.quad	0
+r7_15:	.quad	0
+
+/* 
+ index into reg set Current Accumulator Block	3bits
+ previous context accumulator block		3bits
+ Previous context Section include bit8=PCU	5bits
+ Previous Context User Current sec is from PC
+ if flags is neg ie sign bit set then VM is enabled
+ allows a quick way to verify VM on
+
+Reg usage:
+s0 == opjumpbase
+s1 == membase
+s2 == PC
+s3 == Flags ( see below )
+s4 == regbase CAB ( referenses the reall Current Accumulators )
+s5 == regbase effective (used by all instructions as register base )
+
+When flags are negative VM is enabled
+
+Logical bit usage
+ Flags |1bit |       |13bits    |1bit|1bit|5bits|3bits|3bits|13bits|13bits|
+       |VMena|MBZ    |PDP-flags |PCU |PCP |PCS  |PAB  |CAB  | UBR  | EBR  |
+
+Physical bit usage so alpha extract/insert can be used
+ Flags |1bit | 9bits |16bits    |1bit|1bit|1bit|5bits|4bits|4bits|16bits|16bits|
+       |VMena|MBZ    |PDP-flags |MBZ |PCU |PCP |PCS  |PAB  |CAB  | UBR  | EBR  |
+
+VMena	Virtual Memory Enabled (sign bit)
+MBZ	Must Be Zero
+PDP-flags	PDP-10 flags
+PCU	Previous Context User
+PCP	Previous Context Public
+PCS	Previous Context Section (PC section)
+PAB	Previous Accumulator Block
+CAB	Current  Accumulator Block
+UBR	User Base Register
+EBR	Executive Base Register
+
+PDP-flags (16bits lower 13 bits belong to PDP10)
+*/
+/* Shift Left Logical so that bit is in axp sign */
+sll_prevcpub	.equ	13
+sll_overflow	.equ	13
+sll_carry0	.equ	14
+sll_carry1	.equ	15
+sll_floatovr	.equ	16
+sll_fpd		.equ	17
+sll_user	.equ	18
+sll_userio	.equ	19
+sll_prevcuser	.equ	19
+sll_public	.equ	20
+sll_addrfinh	.equ	21
+sll_trap2	.equ	22
+sll_trap1	.equ	23
+sll_floatund	.equ	24
+sll_nodiv	.equ	25
+/* Shift Right Logicals so that bit is in low bit axp */
+srl_prevcpub	.equ	12
+srl_overflow	.equ	12
+srl_carry0	.equ	11
+srl_carry1	.equ	10
+srl_floatovr	.equ	9
+srl_fpd		.equ	8
+srl_user	.equ	7
+srl_userio	.equ	6
+srl_prevcuser	.equ	6
+srl_public	.equ	5
+srl_addrfinh	.equ	4
+srl_trap2	.equ	3
+srl_trap1	.equ	2
+srl_floatund	.equ	1
+srl_nodiv	.equ	0
+/* Bit Mask for xor to clear and to get  13 bits wide */
+msk_prevcpub	.equ	010000
+msk_overflow	.equ	010000
+msk_carry0	.equ	004000
+msk_carry1	.equ	002000
+msk_floatovr	.equ	001000
+msk_fpd		.equ	000400
+msk_user	.equ	000200
+msk_userio	.equ	000100
+msk_prevcuser	.equ	000100
+msk_public	.equ	000040
+msk_addrfinh	.equ	000020
+msk_trap2	.equ	000010
+msk_trap1	.equ	000004
+msk_floatund	.equ	000002
+msk_nodiv	.equ	000001
+
+/* process table definitions */
+USECT	.equ	0440
+ESECT	.equ	0440
+
+/*
++-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+
+|3bits|Overflow    |      |      |Floating|    |    |User IO     |      |Address|     |     |Floating | No   |
+|     |Prev context|Carry0|Carry1|Overflow|FPD |User|Prev Context|Public|Failure|Trap2|Trap1|underflow|Divide|
+|     |public      |      |      |        |    |    |User        |      |Inhibit|     |     |         |      |
++-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+
+| MBZ | 1 bit      | 1bit |1bit  | 1bit   |1bit|1bit| 1bit       | 1bit | 1bit  | 1bit|1bit | 1bit    |1bit  |
++-----+------------+------+------+--------+----+----+------------+------+-------+-----+-----+---------+------+
+ ^10   ^13           ^14    ^15    ^16      ^17  ^18  ^19         ^20     ^21     ^22   ^23    ^24      ^25
+ ^^^^^^^
+sll s3,X 
+The above numbers correspond to how many bits to shift s3 left by 2 get that PDP10
+flags into the axp sign bit
+
+*/
+flags:	.quad	0		# storage locations only after console
+PC:	.quad	0		# interupt requesting they be saved
+
+usec:	.quad	0		# micro second counter
+usec10:	.quad	0		# 10micro second counter
+
+interupt:	.quad	0	# fe will indicate interupt with nozero
+
+
+MM:	.quad	0:4194304
+	# each word lower 36bits is PDP-10 word bit 63 is address break on
+	# real 10 only has one address we can support address break
+	# on each and every word fetched for execution
+	# this leaves 27 bits unassigned
+
+emboxend:
+
+
+
