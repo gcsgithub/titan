@@ -1,6 +1,6 @@
 This is an unfinished work. 
 Its purpose was to implement an emulator for a DECSYSTEM-20 using a PDP-10 KL processor with extended memory.
-The project came to an abrubpt end when the Alpha Processor ironically suffered a similar fate as the PDP-10.
+The project came to an abrupt end when the Alpha Processor ironically suffered a similar fate as the PDP-10.
 
 Whats mostly done is a framework implementing the Virtual Memory and instruction fetch of the machine.
 
